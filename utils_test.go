@@ -15,9 +15,9 @@ func xor(a, b []byte) []byte {
 	return dst
 }
 
-func random(n int) []byte {
+func randomBytes(n int) []byte {
 	if n < 0 {
-		panic("slice size must bigger than zero")
+		panic("Slice size must be greater than zero")
 	}
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

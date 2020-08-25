@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"fmt"
 	"log"
 	"testing"
 )
@@ -23,124 +22,147 @@ func padding(in []byte, blockSize int) []byte {
 
 func TestCBCMode(t *testing.T) {
 	var (
-		key  = random(256 / 8)       // init key
-		iv   = random(aes.BlockSize) // init iv
-		plan = []byte("hello, aes-256-cbc, >>>>>, +++++, *****")
+		key             = randomBytes(256 / 8)
+		iv              = randomBytes(aes.BlockSize)
+		plaintext       = []byte("hello, aes-256-cbc, >>>>>, +++++, *****")
+		paddedPlaintext = padding(plaintext, aes.BlockSize)
+		ciphertext      = make([]byte, len(paddedPlaintext))
 	)
 
-	// init aes
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		log.Fatalf("failed to init aes block, err: %v", err)
+		log.Fatal(err)
 	}
+	c := cipher.NewCBCEncrypter(block, iv)
+	c.CryptBlocks(ciphertext, paddedPlaintext)
 
-	// init cbc mode
-	bm := cipher.NewCBCEncrypter(block, iv)
-
-	// Encrypt
-	padded := padding(plan, aes.BlockSize)
-	enc := make([]byte, len(padded))
-	bm.CryptBlocks(enc, padded)
-
-	// Decrypt
 	t.Run("decrypt", func(t *testing.T) {
-		bmd := cipher.NewCBCDecrypter(block, iv)
-		res := make([]byte, len(enc))
-		bmd.CryptBlocks(res, enc)
-		fmt.Printf("密文：%x\n", enc)
-		fmt.Printf("解密：%s\n", string(res))
+		dec := make([]byte, len(ciphertext))
+		c := cipher.NewCBCDecrypter(block, iv)
+		c.CryptBlocks(dec, ciphertext)
+		t.Logf("密文：%x\n", ciphertext)
+		t.Logf("解密：%s\n", string(dec))
 	})
 
 	t.Run("modify-single-byte", func(t *testing.T) {
-		_enc := sliceCopy(enc)
-		_enc[4] += 1
-		bmd := cipher.NewCBCDecrypter(block, iv)
-		res := make([]byte, len(_enc))
-		bmd.CryptBlocks(res, _enc)
-		fmt.Printf("解密：%s\n", string(res))
+		// 当前块（全部不可用）和下一块（对应位置）受影响
+		_enc := sliceCopy(ciphertext)
+		_enc[5] += 1
+		dec := make([]byte, len(_enc))
+		c := cipher.NewCBCDecrypter(block, iv)
+		c.CryptBlocks(dec, _enc)
+		t.Logf("解密：%s\n", string(dec))
+	})
+
+	t.Run("modify-single-byte-iv", func(t *testing.T) {
+		// 篡改IV可以影响解密后第一块明文对应位置的结果
+		dec := make([]byte, len(ciphertext))
+		_iv := sliceCopy(iv)
+		_iv[4] += 1
+		c := cipher.NewCBCDecrypter(block, _iv)
+		c.CryptBlocks(dec, ciphertext)
+		t.Logf("解密：%s\n", string(dec))
 	})
 }
 
 func TestCFBMode(t *testing.T) {
 	var (
-		key  = random(256 / 8)       // init key
-		iv   = random(aes.BlockSize) // init iv
-		plan = []byte("hello, aes-256-cfb, >>>>>, +++++, *****")
+		key        = randomBytes(256 / 8)
+		iv         = randomBytes(aes.BlockSize)
+		plaintext  = []byte("hello, aes-256-cfb, >>>>>, +++++, *****")
+		ciphertext = make([]byte, len(plaintext))
 	)
 
-	// init aes
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		log.Fatalf("failed to init aes block, err: %v", err)
+		log.Fatal(err)
 	}
-
-	// init cfb mode
 	s := cipher.NewCFBEncrypter(block, iv)
-	// Encrypt
-	enc := make([]byte, len(plan))
-	s.XORKeyStream(enc, plan)
+	s.XORKeyStream(ciphertext, plaintext)
 
 	t.Run("decrypt", func(t *testing.T) {
+		dec := make([]byte, len(ciphertext))
 		s := cipher.NewCFBDecrypter(block, iv)
-		dec := make([]byte, len(enc))
-		s.XORKeyStream(dec, enc)
-		t.Logf("密文：%x\n", enc)
+		s.XORKeyStream(dec, ciphertext)
+		t.Logf("密文：%x\n", ciphertext)
 		t.Logf("明文：%s\n", string(dec))
+	})
+
+	t.Run("modify-single-byte", func(t *testing.T) {
+		// 当前块和下一块受影响
+		_enc := sliceCopy(ciphertext)
+		_enc[4+16] += 1
+		res := make([]byte, len(_enc))
+		s := cipher.NewCFBDecrypter(block, iv)
+		s.XORKeyStream(res, _enc)
+		t.Logf("解密：%s\n", string(res))
 	})
 }
 
 func TestOFBMode(t *testing.T) {
 	var (
-		key  = random(256 / 8)       // init key
-		iv   = random(aes.BlockSize) // init iv
-		plan = []byte("hello, aes-256-ofb, >>>>>, +++++, *****")
+		key        = randomBytes(256 / 8)
+		iv         = randomBytes(aes.BlockSize)
+		plaintext  = []byte("hello, aes-256-ofb, >>>>>, +++++, *****")
+		ciphertext = make([]byte, len(plaintext))
 	)
 
-	// init aes
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		log.Fatalf("failed to init aes block, err: %v", err)
+		log.Fatal(err)
 	}
-
-	// init ofb mode
 	s := cipher.NewOFB(block, iv)
-	// Encrypt
-	enc := make([]byte, len(plan))
-	s.XORKeyStream(enc, plan)
+	s.XORKeyStream(ciphertext, plaintext)
 
 	t.Run("decrypt", func(t *testing.T) {
+		dec := make([]byte, len(ciphertext))
 		s := cipher.NewOFB(block, iv)
-		dec := make([]byte, len(enc))
-		s.XORKeyStream(dec, enc)
-		t.Logf("密文：%x\n", enc)
+		s.XORKeyStream(dec, ciphertext)
+		t.Logf("密文：%x\n", ciphertext)
 		t.Logf("明文：%s\n", string(dec))
+	})
+
+	t.Run("modify-single-byte", func(t *testing.T) {
+		// 仅当前位受影响
+		_enc := sliceCopy(ciphertext)
+		_enc[4] += 1
+		res := make([]byte, len(_enc))
+		s := cipher.NewOFB(block, iv)
+		s.XORKeyStream(res, _enc)
+		t.Logf("解密：%s\n", string(res))
 	})
 }
 
 func TestCTRMode(t *testing.T) {
 	var (
-		key  = random(256 / 8)       // init key
-		iv   = random(aes.BlockSize) // init iv
-		plan = []byte("hello, aes-256-ctr, >>>>>, +++++, *****")
+		key        = randomBytes(256 / 8)
+		iv         = randomBytes(aes.BlockSize)
+		plaintext  = []byte("hello, aes-256-ctr, >>>>>, +++++, *****")
+		ciphertext = make([]byte, len(plaintext))
 	)
 
-	// init aes
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		log.Fatalf("failed to init aes block, err: %v", err)
+		log.Fatal(err)
 	}
-
-	// init ctr mode
 	s := cipher.NewCTR(block, iv)
-	// Encrypt
-	enc := make([]byte, len(plan))
-	s.XORKeyStream(enc, plan)
+	s.XORKeyStream(ciphertext, plaintext)
 
 	t.Run("decrypt", func(t *testing.T) {
+		dec := make([]byte, len(ciphertext))
 		s := cipher.NewCTR(block, iv)
-		dec := make([]byte, len(enc))
-		s.XORKeyStream(dec, enc)
-		t.Logf("密文：%x\n", enc)
+		s.XORKeyStream(dec, ciphertext)
+		t.Logf("密文：%x\n", ciphertext)
 		t.Logf("明文：%s\n", string(dec))
+	})
+
+	t.Run("modify-single-byte", func(t *testing.T) {
+		// 仅当前位受影响
+		_enc := sliceCopy(ciphertext)
+		_enc[4+16] += 1
+		res := make([]byte, len(_enc))
+		s := cipher.NewCTR(block, iv)
+		s.XORKeyStream(res, _enc)
+		t.Logf("解密：%s\n", string(res))
 	})
 }
