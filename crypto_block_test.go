@@ -20,6 +20,38 @@ func padding(in []byte, blockSize int) []byte {
 	return dst
 }
 
+func TestECBMode(t *testing.T) {
+	var (
+		key             = randomBytes(256 / 8)
+		plaintext       = []byte("helloaes-256-ecbhelloaes-256-ecb")
+		paddedPlaintext = padding(plaintext, aes.BlockSize)
+		ciphertext      = make([]byte, len(paddedPlaintext))
+	)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		log.Fatal(err)
+	}
+	c := NewECBEncrypter(block)
+	c.CryptBlocks(ciphertext, paddedPlaintext)
+
+	t.Run("decrypt", func(t *testing.T) {
+		dec := make([]byte, len(ciphertext))
+		c := NewECBDecrypter(block)
+		c.CryptBlocks(dec, ciphertext)
+		t.Logf("密文：%x\n", ciphertext)
+		t.Logf("解密：%s\n", string(dec))
+	})
+
+	t.Run("modify-single-byte", func(t *testing.T) {
+		_enc := sliceCopy(ciphertext)
+		_enc[1] += 1
+		dec := make([]byte, len(ciphertext))
+		c := NewECBDecrypter(block)
+		c.CryptBlocks(dec, _enc)
+		t.Logf("解密：%s\n", string(dec))
+	})
+}
+
 func TestCBCMode(t *testing.T) {
 	var (
 		key             = randomBytes(256 / 8)
